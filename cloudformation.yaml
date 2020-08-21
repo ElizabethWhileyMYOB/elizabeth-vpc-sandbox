@@ -49,13 +49,13 @@ Resources:
       Tags:
         - Key: Name
           Value: !Ref EnvironmentName
-
+  # Associate the gateway to the VPC
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
-
+  # Internet accessible subnet in the availability zone A
   PublicSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
@@ -66,7 +66,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-public-a
-
+  # Internet accessible subnet in the availability zone B
   PublicSubnetB:
     Type: AWS::EC2::Subnet
     Properties:
@@ -77,7 +77,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-public-b
-
+  #Non-internet-accessible subnet in availability zone A
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
@@ -88,7 +88,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-private-a
-
+  #Non-internet-accessible subnet in availability zone B
   PrivateSubnetB:
     Type: AWS::EC2::Subnet
     Properties:
@@ -99,31 +99,31 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-private-b
-
+  #Elastic IP for the Gateway for the private subnet A to be able to get onto the internet
   NatGatewayAEIP:
     Type: AWS::EC2::EIP
     DependsOn: InternetGatewayAttachment
     Properties:
       Domain: vpc
-
+  #Elastic IP for the Gateway for the private subnet B to be able to get onto the internet
   NatGatewayBEIP:
     Type: AWS::EC2::EIP
     DependsOn: InternetGatewayAttachment
     Properties:
       Domain: vpc
-
+  #Gateway for the private subnet A to be able to get onto the internet
   NatGatewayA:
     Type: AWS::EC2::NatGateway
     Properties:
       AllocationId: !GetAtt NatGatewayAEIP.AllocationId
       SubnetId: !Ref PublicSubnetA
-
+  #Gateway for the private subnet B to be able to get onto the internet
   NatGatewayB:
     Type: AWS::EC2::NatGateway
     Properties:
       AllocationId: !GetAtt NatGatewayBEIP.AllocationId
       SubnetId: !Ref PublicSubnetB
-
+  # Routing table for the public subnets
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -139,19 +139,19 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
-
+  # Associate the public subnet A with its routing table
   PublicSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetA
-
+  # Associate the public subnet B with its routing table
   PublicSubnetBRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetB
-
+  # Routing table for the private subnet in availability zone A
   PrivateRouteTableA:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -159,20 +159,20 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-private-a
-
+  
   DefaultPrivateRouteA:
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref PrivateRouteTableA
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGatewayA
-
+  # Associate the private subnet with its routing table
   PrivateSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PrivateRouteTableA
       SubnetId: !Ref PrivateSubnetA
-
+# Routing table for the private subnet in availability zone B
   PrivateRouteTableB:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -187,13 +187,13 @@ Resources:
       RouteTableId: !Ref PrivateRouteTableB
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGatewayB
-
+  # Associate the private subnet B with its routing table
   PrivateSubnetBRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PrivateRouteTableB
       SubnetId: !Ref PrivateSubnetB
-
+  #Security group for the load balancer
   ELBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -204,7 +204,7 @@ Resources:
         FromPort: 80
         ToPort: 80
         CidrIp: !Ref OfficeIP
-
+  #Security group for the web servers
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -215,14 +215,44 @@ Resources:
           FromPort: 80
           ToPort: 80
           SourceSecurityGroupId: !Ref ELBSecurityGroup
+  # Linux Instance with Apache running on Port 80
+  AmazonLinuxInstanceA:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0ded330691a314693
+      InstanceType: t2.micro
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: 'false'
+        DeviceIndex: '0'
+        GroupSet:
+        - !Ref InstanceSecurityGroup
+        SubnetId:
+          Ref: PrivateSubnetA
+      Tenancy: default
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          sudo su
+          yum update -y
+          yum install httpd -y
+          systemctl enable httpd
+          systemctl start httpd
+          echo "<html><body>Hello from Web Server A!</body></html>" > /var/www/html/index.html
 
   ElasticLoadBalancer:
-      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Type: AWS::ElasticLoadBalancing::LoadBalancer
       Properties:
         Scheme: internet-facing
         Subnets:
         - Ref: PublicSubnetA
         - Ref: PublicSubnetB
+        Instances: 
+        - !Ref AmazonLinuxInstanceA
+        Listeners:
+        - InstancePort: 80
+          InstanceProtocol: HTTP
+          LoadBalancerPort: 80
+          Protocol: HTTP
         SecurityGroups:
         - Ref: ELBSecurityGroup
 
