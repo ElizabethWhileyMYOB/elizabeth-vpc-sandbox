@@ -39,6 +39,8 @@ Resources:
     Properties:
       CidrBlock: !Ref VpcCIDR
       EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-vpc
@@ -204,6 +206,7 @@ Resources:
         FromPort: 80
         ToPort: 80
         CidrIp: !Ref OfficeIP
+
   #Security group for the web servers
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -215,6 +218,7 @@ Resources:
           FromPort: 80
           ToPort: 80
           SourceSecurityGroupId: !Ref ELBSecurityGroup
+
   # Linux Instance with Apache running on Port 80
   AmazonLinuxInstanceA:
     Type: AWS::EC2::Instance
@@ -222,22 +226,50 @@ Resources:
       ImageId: ami-0ded330691a314693
       InstanceType: t2.micro
       NetworkInterfaces:
-      - AssociatePublicIpAddress: 'false'
-        DeviceIndex: '0'
+      - AssociatePublicIpAddress: false
+        DeviceIndex: 1
         GroupSet:
         - !Ref InstanceSecurityGroup
         SubnetId:
           Ref: PrivateSubnetA
       Tenancy: default
       UserData:
-        Fn::Base64: !Sub |
+        Fn::Base64: |
           #!/bin/bash -xe
-          sudo su
-          yum update -y
-          yum install httpd -y
-          systemctl enable httpd
+          yum update -y # good practice to update existing packages
+          yum install -y httpd # install web server 
           systemctl start httpd
-          echo "<html><body>Hello from Web Server A!</body></html>" > /var/www/html/index.html
+          systemctl enable httpd
+          echo "Hello from web server A!" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-web-serverA  
+
+# Linux Instance with Apache running on Port 80
+  AmazonLinuxInstanceB:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0ded330691a314693
+      InstanceType: t2.micro
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: false
+        DeviceIndex: 0
+        GroupSet:
+        - !Ref InstanceSecurityGroup
+        SubnetId:
+          Ref: PrivateSubnetB
+      Tenancy: default
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash -xe
+          yum update -y # good practice to update existing packages
+          yum install -y httpd # install web server 
+          systemctl start httpd
+          systemctl enable httpd
+          echo "Hello from web server B!" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-web-serverB
 
   ElasticLoadBalancer:
       Type: AWS::ElasticLoadBalancing::LoadBalancer
@@ -248,6 +280,7 @@ Resources:
         - Ref: PublicSubnetB
         Instances: 
         - !Ref AmazonLinuxInstanceA
+        - !Ref AmazonLinuxInstanceB
         Listeners:
         - InstancePort: 80
           InstanceProtocol: HTTP
