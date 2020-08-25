@@ -160,7 +160,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-private-a
+          Value: !Sub ${EnvironmentName}-Private-A
   
   DefaultPrivateRouteA:
     Type: AWS::EC2::Route
@@ -181,7 +181,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-private-b
+          Value: !Sub ${EnvironmentName}-Private-B
 
   DefaultPrivateRouteB:
     Type: AWS::EC2::Route
@@ -227,11 +227,10 @@ Resources:
       InstanceType: t2.micro
       NetworkInterfaces:
       - AssociatePublicIpAddress: false
-        DeviceIndex: 1
+        DeviceIndex: 0
         GroupSet:
         - !Ref InstanceSecurityGroup
-        SubnetId:
-          Ref: PrivateSubnetA
+        SubnetId: !Ref PrivateSubnetA
       Tenancy: default
       UserData:
         Fn::Base64: |
@@ -256,8 +255,7 @@ Resources:
         DeviceIndex: 0
         GroupSet:
         - !Ref InstanceSecurityGroup
-        SubnetId:
-          Ref: PrivateSubnetB
+        SubnetId: !Ref PrivateSubnetB
       Tenancy: default
       UserData:
         Fn::Base64: |
@@ -276,8 +274,8 @@ Resources:
       Properties:
         Scheme: internet-facing
         Subnets:
-        - Ref: PublicSubnetA
-        - Ref: PublicSubnetB
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
         Instances: 
         - !Ref AmazonLinuxInstanceA
         - !Ref AmazonLinuxInstanceB
@@ -287,7 +285,7 @@ Resources:
           LoadBalancerPort: 80
           Protocol: HTTP
         SecurityGroups:
-        - Ref: ELBSecurityGroup
+        - !Ref ELBSecurityGroup
 
 Outputs:
   VPC:
