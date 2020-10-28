@@ -34,6 +34,7 @@ Parameters:
     Default: 203.34.100.2/32  
 
 Resources:
+
 # VPC
   VPC:
     Type: AWS::EC2::VPC
@@ -45,6 +46,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-vpc
+ 
  # Gateway to the internet
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -52,12 +54,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Ref EnvironmentName
+  
   # Associate the gateway to the VPC
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
+  
   # Internet accessible subnet in the availability zone A
   PublicSubnetA:
     Type: AWS::EC2::Subnet
@@ -69,6 +73,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-public-a
+  
   # Internet accessible subnet in the availability zone B
   PublicSubnetB:
     Type: AWS::EC2::Subnet
@@ -80,6 +85,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-public-b
+  
   #Non-internet-accessible subnet in availability zone A
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
@@ -91,6 +97,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-private-a
+  
   #Non-internet-accessible subnet in availability zone B
   PrivateSubnetB:
     Type: AWS::EC2::Subnet
@@ -102,31 +109,20 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-private-b
-  Elastic IP for the Gateway for the private subnet A to be able to get onto the internet
-  NatGatewayAEIP:
+  # #Elastic IP for the NAT Gateway
+  NatGatewayEIP:
     Type: AWS::EC2::EIP
     DependsOn: InternetGatewayAttachment
     Properties:
       Domain: vpc
-  #Elastic IP for the Gateway for the private subnet B to be able to get onto the internet
-  # NatGatewayBEIP:
-  #   Type: AWS::EC2::EIP
-  #   DependsOn: InternetGatewayAttachment
-  #   Properties:
-  #     Domain: vpc
-  #Gateway for the private subnet A to be able to get onto the internet
-  # NatGatewayA:
-  #   Type: AWS::EC2::NatGateway
-  #   Properties:
-  #     AllocationId: !GetAtt NatGatewayAEIP.AllocationId
-  #     SubnetId: !Ref PublicSubnetA
-  # #Gateway for the private subnet B to be able to get onto the internet
-  # NatGatewayB:
-  #   Type: AWS::EC2::NatGateway
-  #   Properties:
-  #     AllocationId: !GetAtt NatGatewayBEIP.AllocationId
-  #     SubnetId: !Ref PublicSubnetB
-  # Routing table for the public subnets
+  # #Gateway for the private subnets to be able to get onto the internet
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+  
+  # Public route table
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -134,7 +130,8 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-public
-
+  
+  # Public route associated with the public route table
   DefaultPublicRoute:
     Type: AWS::EC2::Route
     DependsOn: InternetGatewayAttachment
@@ -142,6 +139,7 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
+  
   # Associate the public subnet A with its routing table
   PublicSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -168,14 +166,14 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTableA
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGatewayA
-  # Associate the private subnet with its routing table
+      NatGatewayId: !Ref NatGateway
+#   # Associate the private subnet with its routing table
   PrivateSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PrivateRouteTableA
       SubnetId: !Ref PrivateSubnetA
-# Routing table for the private subnet in availability zone B
+# # Routing table for the private subnet in availability zone B
   PrivateRouteTableB:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -184,18 +182,18 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName}-Private-B
 
-  DefaultPrivateRouteB:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTableB
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGatewayB
-  # Associate the private subnet B with its routing table
-  PrivateSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref PrivateRouteTableB
-      SubnetId: !Ref PrivateSubnetB
+#   DefaultPrivateRouteB:
+#     Type: AWS::EC2::Route
+#     Properties:
+#       RouteTableId: !Ref PrivateRouteTableB
+#       DestinationCidrBlock: 0.0.0.0/0
+#       NatGatewayId: !Ref NatGateway
+#   # Associate the private subnet B with its routing table
+#   PrivateSubnetBRouteTableAssociation:
+#     Type: AWS::EC2::SubnetRouteTableAssociation
+#     Properties:
+#       RouteTableId: !Ref PrivateRouteTableB
+#       SubnetId: !Ref PrivateSubnetB
   #Security group for the load balancer
   ELBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -244,50 +242,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-web-serverA  
-
-# Linux Instance with Apache running on Port 80
-  AmazonLinuxInstanceB:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: ami-0ded330691a314693
-      InstanceType: t2.micro
-      NetworkInterfaces:
-      - AssociatePublicIpAddress: false
-        DeviceIndex: 0
-        GroupSet:
-        - !Ref InstanceSecurityGroup
-        SubnetId: !Ref PrivateSubnetB
-      Tenancy: default
-      UserData:
-        Fn::Base64: |
-          #!/bin/bash -xe
-          yum update -y # good practice to update existing packages
-          yum install -y httpd # install web server 
-          systemctl start httpd
-          systemctl enable httpd
-          echo "Hello from web server B!" > /var/www/html/index.html
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName}-web-serverB
-
-  ElasticLoadBalancer:
-      Type: AWS::ElasticLoadBalancing::LoadBalancer
-      Properties:
-        Scheme: internet-facing
-        Subnets:
-        - !Ref PublicSubnetA
-        - !Ref PublicSubnetB
-        Instances: 
-        - !Ref AmazonLinuxInstanceA
-        - !Ref AmazonLinuxInstanceB
-        Listeners:
-        - InstancePort: 80
-          InstanceProtocol: HTTP
-          LoadBalancerPort: 80
-          Protocol: HTTP
-        SecurityGroups:
-        - !Ref ELBSecurityGroup
-
  # NACL
   PrivateNACL:
     Type: 'AWS::EC2::NetworkAcl'
@@ -311,32 +265,32 @@ Resources:
         To: 80
 
   # Allow return traffic from NAT Gateway
-  naclEntryAllowReturnTrafficNATGateway:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId: !Ref PrivateNACL
-      RuleNumber: 110
-      Protocol: 6  # tcp
-      RuleAction: allow
-      Egress: false  #inbound rule
-      CidrBlock: 0.0.0.0/0
-      PortRange:
-        From: 1024
-        To: 65535
+  # naclEntryAllowReturnTrafficNATGateway:
+  #   Type: AWS::EC2::NetworkAclEntry
+  #   Properties:
+  #     NetworkAclId: !Ref PrivateNACL
+  #     RuleNumber: 110
+  #     Protocol: 6  # tcp
+  #     RuleAction: allow
+  #     Egress: false  #inbound rule
+  #     CidrBlock: 0.0.0.0/0
+  #     PortRange:
+  #       From: 1024
+  #       To: 65535
 
-  # Allow all Outgoing TCP traffic
-  NaclRulesForOutboundTCP:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId: !Ref PrivateNACL
-      RuleNumber: 100
-      Protocol: 6  # tcp
-      RuleAction: allow
-      Egress: true  # this rule applies to egress traffic from the subnet
-      CidrBlock: 0.0.0.0/0
-      PortRange:
-        From: 0  # client will be using ephemeral port, using 80 will not work
-        To: 65535
+  # # # Allow all Outgoing TCP traffic
+  # NaclRulesForOutboundTCP:
+  #   Type: AWS::EC2::NetworkAclEntry
+  #   Properties:
+  #     NetworkAclId: !Ref PrivateNACL
+  #     RuleNumber: 100
+  #     Protocol: 6  # tcp
+  #     RuleAction: allow
+  #     Egress: true  # this rule applies to egress traffic from the subnet
+  #     CidrBlock: 0.0.0.0/0
+  #     PortRange:
+  #       From: 0  # client will be using ephemeral port, using 80 will not work
+  #       To: 65535
 
 # associate subnet with NACL. Otherwise, by default, it will be attached to the main nacl
   PrivateNaclAssociation:
@@ -376,13 +330,3 @@ Outputs:
     Value: !Ref VpcCIDR
     Export:
       Name: !Join [-, [NetworkCidr, !Ref EnvironmentName]]
-
-  NatGateways:
-    Description: Natgateway logical ids in
-    Value: !Join [ ",", [ !Ref NatGatewayA, !Ref NatGatewayB]]
-    Export:
-      Name: !Join [-, [NatGateways, !Ref EnvironmentName]]
-
-  ELBHostName:
-    Description: Load Balancer Hostname
-    Value: !GetAtt ElasticLoadBalancer.DNSName
